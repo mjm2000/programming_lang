@@ -202,14 +202,14 @@ let get_raw_lexes char_list =
 let extract_lexems str_list = List.map typify str_list 
 exception Symbol
 
-type exp = ADD of exp * exp | MULTI of exp * exp | PIPE of exp * exp | COMP of exp * exp  | CAT of exp * exp | PARAM of exp * exp
+type exp = ADD of exp * exp | MULTI of exp * exp | DIV of exp * exp| PIPE of exp * exp | COMP of exp * exp  | CAT of exp * exp | PARAM of exp * exp
             | INT of int |FLOAT of float | STR of string| CHAR of char |IDEN of string  | EMPTY 
 
 
 
-type term_type = OP of tokens 
-            | NUMBER of tokens 
-            | FUNCTION of tokens
+type term_type = OP of exp
+            | VALUE of exp 
+            | FUNCTION of exp 
             | ERROR 
             | LP | RP
 
@@ -217,30 +217,38 @@ type term_type = OP of tokens
 type symbol = ENTRY of string * term_type  * symbol list
 
 let parser_f terminals_list = 
-    let ordering op = match op with
-        |TIMES->3
-        |SLASH->3
-        |PLUS->2
-        |MINUS->2
+    
+    let ordering value = 
+        let op = match value with
+            |OP(b) ->b 
+            | _->EMPTY 
+        in 
+        match op with
+        | PARAM (x,y) -> 5
+        | PIPE (x,y) -> 4
+        | COMP  (x,y) -> 3
+        | MULTI (x,y) -> 2
+        | ADD (x,y) | CAT  (x,y) -> 1
         |_-> -1
     in
     let term_type term = match term with 
-        |TIMES|SLASH|PLUS|MINUS as x -> OP(x)
+        |ADD (x,y) | MULTI (x,y)| PIPE (x,y)| COMP  (x,y)| CAT  (x,y)| PARAM (x,y) as z -> OP(z)
+        |INT(_) |FLOAT (_) | STR (_)| CHAR ( _)  |IDEN (_) as z ->  VALUE(z)
         | _ -> ERROR
 
     in
-    let rec shunting_yard  terms output ops = match terms,output,ops with
-        |(INTEGER(v) as top)::rterms,_,_ -> 
-                shunting_yard rterms (top::output) ops 
-        |STRING(v) as top::rterms,_,_ -> 
-                shunting_yard rterms (top::output) ops 
- 
-        |FLOAT(v) as top::rterms,_,_ -> 
-                shunting_yard rterms (top::output) ops 
-        |CHAR(v) as top::rterms,_,_ -> 
-                shunting_yard rterms (top::output) ops 
-        |_->[] 
+    let right_value term = match term with
+        |ADD (x,y) | MULTI (x,y)| PIPE (x,y)| COMP  (x,y)| CAT  (x,y)| PARAM (x,y)  -> OP(y)
+        |_-> ERROR
 
+    in
+
+    let rec  sort_exp exp prev_exp = 
+        match term_type exp with 
+            |OP(_) as x when (ordering x) > (sort_exp exp) ->
+
+            |VALUE(x),_ -> 1 
+        
     in
     let rec expression terms output = match terms,output  with
         |RPARAM::xs,exp ->
@@ -256,6 +264,8 @@ let parser_f terminals_list =
         |PLUS::FLOAT(v)::xs,exp ->  expression xs (ADD(exp,FLOAT v))
         |MINUS::INTEGER(v)::xs,exp  -> expression xs (ADD( exp,INT (v * -1)))
         |MINUS::FLOAT(v)::xs,exp ->  expression xs (ADD( exp,FLOAT (Float.mul v (-1.0) )))
+        |TIMES::INTEGER(v)::xs,exp ->  expression xs (ADD( exp,INT( v * (-1) )))
+        |TIMES::FLOAT(v)::xs,exp ->  expression xs (ADD( exp,FLOAT( Float.mul v  (-1.0) )))
         |_->terms,output
     
     in
@@ -265,7 +275,11 @@ let parser_f terminals_list =
 
             Printf.printf "+ ";
             print_exp right; 
-            
+         |DIV(left,right)-> 
+            print_exp left;
+
+            Printf.printf "\ ";
+            print_exp right;   
         |MULTI(left,right)-> 
 
             print_exp left;
